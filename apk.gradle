@@ -1,0 +1,217 @@
+//apply plugin: 'com.android.application'
+
+//// 默认版本号
+//ext.appVersionCode = 1
+//// 默认版本名
+//ext.appVersionName = "1.0"
+////应用名
+//ext.appName = 'app'
+def path
+android.applicationVariants.all { variant ->
+    variant.outputs.each { output ->
+        //开始输出,自定义输出路径
+        def outputFile = output.outputFile
+//            println "outputFile"+outputFile.name
+
+        if (null != outputFile && outputFile.name.contains('release')) {
+            path = output.outputFile.absolutePath
+            println "outputFile is release" + outputFile.absolutePath
+//            println "outputFile is release"+android.defaultConfig.versionCode
+//            println "outputFile is release"+android.defaultConfig.versionName
+//            aaptShell()
+        }
+    }
+}
+//resguardRelease assembleRelease
+task assembleApk(dependsOn: "assembleRelease") << {
+    if (null == path) {
+        return
+    }
+    //打包完成 判断gradle 打包的***-release.apk是否存在
+    File file = new File(path)
+    if (!file.exists()) {
+        return
+    }
+    //获取apk应用名
+    def appName = aaptShell(file.absolutePath)
+    def appVersionCode = android.defaultConfig.versionCode
+    def versionName = android.defaultConfig.versionName
+    String[] vertions = String .valueOf(versionName).split('\\.')
+    String version = ''
+    for(String s : vertions){
+        version = version+s
+    }
+    //打包的版本
+    String appVertion
+    if(appVersionCode == Integer.valueOf(version)){
+        appVertion = String.valueOf(appVersionCode)
+    }else{
+        appVertion = String.valueOf(versionName)
+    }
+    println('*******aaaa*****  appVertion  : ' + appVertion)
+    //复制改名之后的文件路径
+    def filePath = getApkFilePath()
+//    def name = appName + 'v' + appVersionCode + '_' + getDate() + '.apk'
+//    copyFileUsingFileStreams(file,new File(filePath,name))
+    //复制文件到指定路径
+    copy {
+        from file
+        into filePath
+    }
+    //复制之后的文件
+    File fileApk = new File(filePath, file.name)
+    println('*******aaaa*****' + fileApk.parent)
+    if (fileApk.exists()) {//文件存在 改名字
+        def name = fileApk.parent + '\\' + appName + 'v' + appVertion + '_' + getDate() + '.apk'
+        println('*******aaaa*****' + name)
+        fileApk.renameTo(name)
+    }
+}
+
+//获取  aapt文件路径
+def aaptFilePosition() {
+    Properties properties = new Properties()
+    //获取local.properties 内容
+    project.rootProject.file('local.properties').withInputStream { stream ->
+        properties.load(new InputStreamReader(stream, 'utf-8'))
+    }
+    //通过sdk.dir获取sdk路径
+    def sdkPath = properties.getProperty('sdk.dir')
+    println('aaptFilePosition   ' + sdkPath)
+    File fileSdkBuildTools = new File(sdkPath, "build-tools")
+//    println('fileSdkBuildTools   '+fileSdkBuildTools)
+    //获取build-tools 下所有文件
+    File[] buildToolsfiles = fileSdkBuildTools.listFiles()
+    File aaptFilepath
+    for (File f : buildToolsfiles) {
+        //获取build-tools/** 下所有文件,如 build-tools/23.0.2
+        File[] btoolsFiles = f.listFiles()
+        if (null != btoolsFiles) {
+            for (File bf : btoolsFiles) {
+                //判断是否存在aapt.exe 文件
+                if (bf.name == 'aapt.exe' || bf.name =='aapt') {
+                    aaptFilepath = bf
+                    println("name  " + bf.name + "  absolutePath" + bf.absolutePath)
+                    break
+                }
+            }
+        }
+        if (null != aaptFilepath)
+            break
+    }
+    return aaptFilepath.absolutePath
+}
+
+//通过 aapt 的 dump命令获取 app的名字
+def aaptShell(String apkPath) {
+    def aaptPath = aaptFilePosition()
+
+    List<String> processList = new ArrayList<String>()
+    try {
+//        ProcessBuilder pricessBuilder = new ProcessBuilder()
+//        Process process = pricessBuilder.command(aaptPath,"dump", "badging", apkPath).start()
+        Process process = Runtime.getRuntime().exec(aaptPath + " dump badging " + apkPath)
+        BufferedReader input = new BufferedReader(new InputStreamReader(process.getInputStream(),'utf-8'))
+        String line = ""
+
+        while ((line = input.readLine()) != null) {
+            processList.add(line)
+            println("line  " +line)
+        }
+        input.close()
+    } catch (IOException e) {
+        e.printStackTrace()
+    }
+    //规则匹配
+//    String nameProcessStart = 'application: label=\''
+//    def appName = 'app'
+//    for (String line : processList) {
+//        if(line.startsWith(nameProcessStart)){
+//            String[] lines = line.split('\'')
+//            appName = lines[1]
+//            //防止乱码 转utf-8
+//            appName = new String(appName.getBytes(),'utf-8')
+//            println("appName  "+appName)
+//            break
+//        }
+//    }
+    String ch = 'application-label-zh-CN'
+    def appName = 'app'
+    for (String line : processList) {
+        if (line.startsWith(ch)) {
+            String[] lines = line.split('\'')
+            appName = lines[1]
+            //防止乱码 转utf-8
+            appName = new String(appName.getBytes())
+            println("appName  " + appName)
+            break
+        }
+    }
+    return appName
+}
+
+//def copyFileUsingFileStreams(File source, File dest){
+//    println('*******aaaa*****'+dest.absolutePath)
+//    InputStream input = null
+//    OutputStream output = null
+//    try {
+//        input = new FileInputStream(source)
+//        output = new FileOutputStream(dest)
+//        byte[] buf = new byte[1024]
+//        int bytesRead
+//        while ((bytesRead = input.read(buf)) > 0) {
+//            output.write(buf, 0, bytesRead)
+//        }
+//    } finally {
+//        input.close()
+//        output.close()
+//        println('*******aaaa***** copy end')
+//    }
+//}
+
+//tasks.whenTaskAdded {
+//    task ->
+//        if(task.name == 'assembleRelease'){
+//            task.doLast {
+//                println('**task***** start copy')
+//            }
+//        }
+//}
+
+//apk复制路径
+def getApkFilePath() {
+    def files = new File('apk/')
+    if (!files.exists()) {
+        files.mkdirs()
+    }
+    return files.absolutePath
+}
+
+//获取日期
+def getDate() {
+    def date = new Date()
+    def formattedDate = date.format('yyyy_MMdd_HHmmss')
+    return formattedDate
+}
+
+//// 加载版本信息配置文件方法
+//def loadProperties() {
+//    def proFile = file("apk.properties")
+//    if(!proFile.exists()){
+//        println "apk.properties not exists!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+//        return
+//    }
+//    Properties pro = new Properties()
+//    proFile.withInputStream { stream->
+//        pro.load(new InputStreamReader(stream,'utf-8'))
+//
+//    }
+//    appVersionCode = Integer.valueOf(pro.appVersionCode)
+//    appVersionName = pro.appVersionName
+//    appName = pro.appName
+//    println 'appVersionCode:  '+appVersionCode
+//    println 'appVersionName:  '+appVersionName
+//    println 'appName:  '+appName
+//}
+//加载版本信息
+//loadProperties()
